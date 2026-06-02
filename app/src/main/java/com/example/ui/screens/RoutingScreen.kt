@@ -38,7 +38,6 @@ fun RoutingScreen(
 ) {
     val effects by viewModel.effectsState.collectAsState()
     val isInputActive by viewModel.isInputActive.collectAsState()
-    val isDemoActive by viewModel.isDemoSingerActive.collectAsState()
 
     val primaryColor = MaterialTheme.colorScheme.primary
     val secondaryColor = MaterialTheme.colorScheme.secondary
@@ -119,8 +118,7 @@ fun RoutingScreen(
                 val h = size.height
 
                 // Node coordinates mapping
-                val nodeInputMic = Offset(w * 0.15f, h * 0.28f)
-                val nodeInputDemo = Offset(w * 0.15f, h * 0.72f)
+                val nodeInputMic = Offset(w * 0.15f, h * 0.50f)
                 val nodeInputSum = Offset(w * 0.32f, h * 0.50f)
                 
                 val nodeRack1 = Offset(w * 0.55f, h * 0.25f) // EQ + NR Group
@@ -139,17 +137,8 @@ fun RoutingScreen(
                     color = primaryColor
                 )
 
-                // Render Cable 2: Demo -> Sum Node
-                drawWireCable(
-                    start = nodeInputDemo,
-                    end = nodeInputSum,
-                    isActive = isDemoActive,
-                    pulsePhase = pulsePhase,
-                    color = secondaryColor
-                )
-
                 // Routing sum splits to the 3 major processing clusters standard flow
-                val systemAudioActive = isInputActive || isDemoActive
+                val systemAudioActive = isInputActive
 
                 drawWireCable(
                     start = nodeInputSum,
@@ -213,19 +202,9 @@ fun RoutingScreen(
                 isActive = isInputActive,
                 onClick = { viewModel.toggleInputActive() },
                 modifier = Modifier
-                    .align(Alignment.TopStart)
-                    .offset(x = 10.dp, y = 35.dp),
+                    .align(Alignment.CenterStart)
+                    .offset(x = 10.dp, y = 0.dp),
                 color = primaryColor
-            )
-
-            NodeButton(
-                title = "DEMO SINGER",
-                isActive = isDemoActive,
-                onClick = { viewModel.toggleDemoSinger() },
-                modifier = Modifier
-                    .align(Alignment.BottomStart)
-                    .offset(x = 10.dp, y = (-35).dp),
-                color = secondaryColor
             )
 
             // 2. DSP SYSTEM PROCESS CORES GATES

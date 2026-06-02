@@ -39,12 +39,21 @@ class VocalStudioViewModel(application: Application) : AndroidViewModel(applicat
     private val _effectsState = MutableStateFlow(AllEffectsState())
     val effectsState: StateFlow<AllEffectsState> = _effectsState.asStateFlow()
 
+    // Microphone selection options
+    enum class MicrophoneInput(val id: String, val label: String) {
+        SYSTEM_DEFAULT("system_default", "Mic System/Default"),
+        INTERNAL_MIC("internal_mic", "Mic Internal"),
+        HEADSET_MIC("headset_mic", "Mic Headset/Wired"),
+        BLUETOOTH_MIC("bluetooth_mic", "Mic Bluetooth"),
+        USB_MIC("usb_mic", "Mic USB/External")
+    }
+
+    private val _selectedMicInput = MutableStateFlow(MicrophoneInput.SYSTEM_DEFAULT)
+    val selectedMicInput: StateFlow<MicrophoneInput> = _selectedMicInput.asStateFlow()
+
     // Monitoring
     private val _isInputActive = MutableStateFlow(false)
     val isInputActive: StateFlow<Boolean> = _isInputActive.asStateFlow()
-
-    private val _isDemoSingerActive = MutableStateFlow(true)
-    val isDemoSingerActive: StateFlow<Boolean> = _isDemoSingerActive.asStateFlow()
 
     // Volume parameters
     private val _volInput = MutableStateFlow(0.8f)
@@ -83,7 +92,7 @@ class VocalStudioViewModel(application: Application) : AndroidViewModel(applicat
         syncProcessor()
         
         // Start engine loop
-        audioProcessor.start()
+        audioProcessor.start(getApplication())
     }
 
     fun selectTab(tab: StudioTab) {
@@ -101,10 +110,10 @@ class VocalStudioViewModel(application: Application) : AndroidViewModel(applicat
         audioProcessor.isInputActive = newState
     }
 
-    fun toggleDemoSinger() {
-        val newState = !_isDemoSingerActive.value
-        _isDemoSingerActive.value = newState
-        audioProcessor.isDemoSingerActive = newState
+    fun selectMicInput(micInput: MicrophoneInput) {
+        _selectedMicInput.value = micInput
+        audioProcessor.selectedMicInput = micInput
+        audioProcessor.updateActivePreferredDevice(getApplication())
     }
 
     fun setExpandedRack(index: Int) {

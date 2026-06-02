@@ -51,7 +51,7 @@ class MainActivity : ComponentActivity() {
             // Turn on processing dynamically if allowed
             viewModel.updateEffects { state -> state.eq.isEnabled = true }
         } else {
-            Toast.makeText(this, "Izin ditolak. Aplikasi berjalan dalam mode demonstrasi suara vokal.", Toast.LENGTH_LONG).show()
+            Toast.makeText(this, "Izin ditolak. Silakan berikan izin mikrofon untuk dapat memproses vokal mikrofon Anda secara real-time.", Toast.LENGTH_LONG).show()
         }
     }
 

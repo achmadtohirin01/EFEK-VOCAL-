@@ -41,7 +41,7 @@ fun MainStudioScreen(
 ) {
     val effects by viewModel.effectsState.collectAsState()
     val isInputActive by viewModel.isInputActive.collectAsState()
-    val isDemoActive by viewModel.isDemoSingerActive.collectAsState()
+    val selectedMicInput by viewModel.selectedMicInput.collectAsState()
     val expandedIndex by viewModel.expandedRackIndex.collectAsState()
     val selectedPreset by viewModel.selectedPreset.collectAsState()
     val customPresets by viewModel.customPresets.collectAsState()
@@ -69,9 +69,9 @@ fun MainStudioScreen(
         // --- 2. INPUT TOGGLE CONTROLLER ---
         InputMonitoringController(
             isInputActive = isInputActive,
-            isDemoPressed = isDemoActive,
             onInputToggled = { viewModel.toggleInputActive() },
-            onDemoToggled = { viewModel.toggleDemoSinger() }
+            selectedMicInput = selectedMicInput,
+            onMicInputSelected = { viewModel.selectMicInput(it) }
         )
 
         Spacer(modifier = Modifier.height(14.dp))
@@ -992,70 +992,136 @@ fun StatBlock(label: String, value: String, color: Color = Color.White) {
 @Composable
 fun InputMonitoringController(
     isInputActive: Boolean,
-    isDemoPressed: Boolean,
     onInputToggled: () -> Unit,
-    onDemoToggled: () -> Unit
+    selectedMicInput: com.example.viewmodel.VocalStudioViewModel.MicrophoneInput,
+    onMicInputSelected: (com.example.viewmodel.VocalStudioViewModel.MicrophoneInput) -> Unit
 ) {
-    Row(
-        modifier = Modifier.fillMaxWidth(),
-        horizontalArrangement = Arrangement.spacedBy(10.dp)
+    Column(
+        modifier = Modifier
+            .fillMaxWidth()
+            .background(Color.Black.copy(alpha = 0.25f), RoundedCornerShape(14.dp))
+            .border(1.dp, Color.White.copy(alpha = 0.05f), RoundedCornerShape(14.dp))
+            .padding(12.dp),
+        verticalArrangement = Arrangement.spacedBy(10.dp)
     ) {
         // Main Mic Processing toggle (Large Neon Button)
         Button(
             onClick = onInputToggled,
             modifier = Modifier
-                .weight(1.3f)
-                .height(64.dp)
+                .fillMaxWidth()
+                .height(58.dp)
                 .testTag("input_on_off_toggle"),
-            shape = RoundedCornerShape(14.dp),
+            shape = RoundedCornerShape(10.dp),
             colors = ButtonDefaults.buttonColors(
                 containerColor = if (isInputActive) DarkNeonPrimary.copy(alpha = 0.15f) else PeakClipRed.copy(alpha = 0.12f)
             ),
             border = BorderStroke(2.dp, if (isInputActive) DarkNeonPrimary else PeakClipRed)
         ) {
-            Column(horizontalAlignment = Alignment.CenterHorizontally) {
-                Text(
-                    text = if (isInputActive) "INPUT AKTIF" else "INPUT NONAKTIF",
-                    color = if (isInputActive) DarkNeonPrimary else PeakClipRed,
-                    fontSize = 14.sp,
-                    fontWeight = FontWeight.Black,
-                    letterSpacing = 1.sp
+            Row(
+                verticalAlignment = Alignment.CenterVertically,
+                horizontalArrangement = Arrangement.spacedBy(10.dp)
+            ) {
+                Icon(
+                    imageVector = if (isInputActive) Icons.Default.PlayArrow else Icons.Default.Close,
+                    contentDescription = null,
+                    tint = if (isInputActive) DarkNeonPrimary else PeakClipRed,
+                    modifier = Modifier.size(24.dp)
                 )
-                Text(
-                    text = if (isInputActive) "PROSES HARMONI AKTIF" else "KLIK UNTUK MENGAKTIFKAN MIK",
-                    color = if (isInputActive) Color.White else LightMutedText,
-                    fontSize = 9.sp
-                )
+                Column(
+                    modifier = Modifier.weight(1f),
+                    horizontalAlignment = Alignment.Start
+                ) {
+                    Text(
+                        text = if (isInputActive) "PROSES VOCAL AKTIF" else "MONITOR MIK NONAKTIF",
+                        color = if (isInputActive) DarkNeonPrimary else PeakClipRed,
+                        fontSize = 13.sp,
+                        fontWeight = FontWeight.Black,
+                        letterSpacing = 0.5.sp
+                    )
+                    Text(
+                        text = if (isInputActive) "Mikrofon diproses real-time dengan efek studio" else "Ketuk untuk mengaktifkan pendengaran mikrofon",
+                        color = if (isInputActive) Color.White.copy(alpha = 0.9f) else LightMutedText,
+                        fontSize = 9.sp,
+                        maxLines = 1
+                    )
+                }
             }
         }
 
-        // Demo Singer track switcher
-        Button(
-            onClick = onDemoToggled,
+        // Custom Separator
+        Box(
             modifier = Modifier
-                .weight(0.9f)
-                .height(64.dp)
-                .testTag("demo_singer_toggle"),
-            shape = RoundedCornerShape(14.dp),
-            colors = ButtonDefaults.buttonColors(
-                containerColor = if (isDemoPressed) MaterialTheme.colorScheme.secondary.copy(alpha = 0.18f) else Color.DarkGray.copy(alpha = 0.3f)
-            ),
-            border = BorderStroke(1.5.dp, if (isDemoPressed) MaterialTheme.colorScheme.secondary else Color.Gray.copy(alpha = 0.4f))
-        ) {
-            Column(horizontalAlignment = Alignment.CenterHorizontally) {
-                Icon(
-                    imageVector = if (isDemoPressed) Icons.Default.PlayArrow else Icons.Default.Close,
-                    contentDescription = null,
-                    tint = if (isDemoPressed) MaterialTheme.colorScheme.secondary else Color.White,
-                    modifier = Modifier.size(18.dp)
-                )
-                Spacer(modifier = Modifier.height(2.dp))
-                Text(
-                    text = "PENYANYI DEMO",
-                    color = Color.White,
-                    fontSize = 10.sp,
-                    fontWeight = FontWeight.Bold
-                )
+                .fillMaxWidth()
+                .height(1.dp)
+                .background(Color.White.copy(alpha = 0.08f))
+        )
+
+        // Mic Routing Grid Selector
+        Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
+            Text(
+                text = "SUMBER INPUT MIKROFON (HARDWARE ROUTING):",
+                color = LightMutedText,
+                fontSize = 8.5.sp,
+                fontWeight = FontWeight.Bold,
+                letterSpacing = 0.5.sp
+            )
+            
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.spacedBy(5.dp)
+            ) {
+                com.example.viewmodel.VocalStudioViewModel.MicrophoneInput.values().forEach { inputMode ->
+                    val isSelected = selectedMicInput == inputMode
+                    val textLabel = when (inputMode) {
+                        com.example.viewmodel.VocalStudioViewModel.MicrophoneInput.SYSTEM_DEFAULT -> "Default"
+                        com.example.viewmodel.VocalStudioViewModel.MicrophoneInput.INTERNAL_MIC -> "Internal"
+                        com.example.viewmodel.VocalStudioViewModel.MicrophoneInput.HEADSET_MIC -> "Headset"
+                        com.example.viewmodel.VocalStudioViewModel.MicrophoneInput.BLUETOOTH_MIC -> "Bluetooth"
+                        com.example.viewmodel.VocalStudioViewModel.MicrophoneInput.USB_MIC -> "USB/Card"
+                    }
+                    val icon = when (inputMode) {
+                        com.example.viewmodel.VocalStudioViewModel.MicrophoneInput.SYSTEM_DEFAULT -> Icons.Default.Settings
+                        com.example.viewmodel.VocalStudioViewModel.MicrophoneInput.INTERNAL_MIC -> Icons.Default.Call
+                        com.example.viewmodel.VocalStudioViewModel.MicrophoneInput.HEADSET_MIC -> Icons.Default.Build
+                        com.example.viewmodel.VocalStudioViewModel.MicrophoneInput.BLUETOOTH_MIC -> Icons.Default.Refresh
+                        com.example.viewmodel.VocalStudioViewModel.MicrophoneInput.USB_MIC -> Icons.Default.Share
+                    }
+                    
+                    Button(
+                        onClick = { onMicInputSelected(inputMode) },
+                        modifier = Modifier
+                            .weight(1f)
+                            .height(44.dp)
+                            .testTag("mic_input_${inputMode.name.lowercase()}"),
+                        shape = RoundedCornerShape(8.dp),
+                        contentPadding = PaddingValues(horizontal = 2.dp, vertical = 2.dp),
+                        colors = ButtonDefaults.buttonColors(
+                            containerColor = if (isSelected) MaterialTheme.colorScheme.secondary.copy(alpha = 0.22f) else Color.DarkGray.copy(alpha = 0.22f)
+                        ),
+                        border = BorderStroke(1.dp, if (isSelected) MaterialTheme.colorScheme.secondary else Color.Gray.copy(alpha = 0.2f))
+                    ) {
+                        Column(
+                            horizontalAlignment = Alignment.CenterHorizontally,
+                            verticalArrangement = Arrangement.Center
+                        ) {
+                            Icon(
+                                imageVector = icon,
+                                contentDescription = null,
+                                tint = if (isSelected) MaterialTheme.colorScheme.secondary else Color.Gray,
+                                modifier = Modifier.size(14.dp)
+                            )
+                            Spacer(modifier = Modifier.height(2.dp))
+                            Text(
+                                text = textLabel,
+                                color = if (isSelected) Color.White else Color.Gray,
+                                fontSize = 8.sp,
+                                fontWeight = if (isSelected) FontWeight.Bold else FontWeight.Normal,
+                                maxLines = 1,
+                                textAlign = TextAlign.Center
+                            )
+                        }
+                    }
+                }
             }
         }
     }

@@ -23,7 +23,9 @@ class AudioProcessor {
     var sampleRate = 44100
     var bufferSize = 1024
     var isInputActive = false
-    var isDemoSingerActive = true // Play demo singing simulation so users can test audio processing instantly!
+    var selectedMicInput = com.example.viewmodel.VocalStudioViewModel.MicrophoneInput.SYSTEM_DEFAULT
+    private var activeAudioRecord: android.media.AudioRecord? = null
+    private var appContext: android.content.Context? = null
     
     // Volume controls
     var volInput = 0.8f
@@ -84,9 +86,9 @@ class AudioProcessor {
         440.00, 369.99, 329.63, 293.66, 277.18, 220.00
     )
 
-    fun start() {
+    fun start(context: android.content.Context) {
         if (audioJob != null) return
-        
+        appContext = context.applicationContext
         audioJob = scope.launch {
             runAudioLoop()
         }
@@ -95,6 +97,43 @@ class AudioProcessor {
     fun stop() {
         audioJob?.cancel()
         audioJob = null
+        activeAudioRecord = null
+    }
+
+    fun updateActivePreferredDevice(context: android.content.Context) {
+        val record = activeAudioRecord ?: return
+        if (android.os.Build.VERSION.SDK_INT >= android.os.Build.VERSION_CODES.M) {
+            val audioManager = context.getSystemService(android.content.Context.AUDIO_SERVICE) as android.media.AudioManager
+            val devices = audioManager.getDevices(android.media.AudioManager.GET_DEVICES_INPUTS)
+            
+            val deviceType = when (selectedMicInput) {
+                com.example.viewmodel.VocalStudioViewModel.MicrophoneInput.INTERNAL_MIC -> android.media.AudioDeviceInfo.TYPE_BUILTIN_MIC
+                com.example.viewmodel.VocalStudioViewModel.MicrophoneInput.HEADSET_MIC -> android.media.AudioDeviceInfo.TYPE_WIRED_HEADSET
+                com.example.viewmodel.VocalStudioViewModel.MicrophoneInput.BLUETOOTH_MIC -> android.media.AudioDeviceInfo.TYPE_BLUETOOTH_SCO
+                com.example.viewmodel.VocalStudioViewModel.MicrophoneInput.USB_MIC -> android.media.AudioDeviceInfo.TYPE_USB_DEVICE
+                com.example.viewmodel.VocalStudioViewModel.MicrophoneInput.SYSTEM_DEFAULT -> null
+            }
+            
+            if (deviceType == null) {
+                record.setPreferredDevice(null)
+                Log.d(TAG, "Dynamic routing change: Default/System Mic")
+            } else {
+                val matchingDevice = devices.find { it.type == deviceType }
+                    ?: if (selectedMicInput == com.example.viewmodel.VocalStudioViewModel.MicrophoneInput.USB_MIC) {
+                        devices.find { it.type == android.media.AudioDeviceInfo.TYPE_USB_HEADSET }
+                    } else if (selectedMicInput == com.example.viewmodel.VocalStudioViewModel.MicrophoneInput.BLUETOOTH_MIC) {
+                        devices.find { it.type == android.media.AudioDeviceInfo.TYPE_BLUETOOTH_A2DP }
+                    } else null
+                
+                if (matchingDevice != null) {
+                    val success = record.setPreferredDevice(matchingDevice)
+                    Log.d(TAG, "Dynamic routing change to: ${matchingDevice.productName} (Type: ${matchingDevice.type}), Success: $success")
+                } else {
+                    record.setPreferredDevice(null)
+                    Log.d(TAG, "Microphone device type $deviceType not physically connected. Set preferred device to null.")
+                }
+            }
+        }
     }
 
     @SuppressLint("MissingPermission")
@@ -129,9 +168,11 @@ class AudioProcessor {
 
             if (audioRecord.state == AudioRecord.STATE_INITIALIZED) {
                 audioRecord.startRecording()
+                activeAudioRecord = audioRecord
+                appContext?.let { updateActivePreferredDevice(it) }
                 Log.d(TAG, "AudioRecord initialized and recording started.")
             } else {
-                Log.e(TAG, "Failed to initialize AudioRecord. Falling back to Demo synthesis only.")
+                Log.e(TAG, "Failed to initialize AudioRecord.")
                 audioRecord.release()
                 audioRecord = null
             }
@@ -183,47 +224,7 @@ class AudioProcessor {
                 }
             }
 
-            // 2. GENERATE DEMO SINGING VOCAL LOOP IF ENABLED (or when input monitoring is active but physically silent)
-            if (isDemoSingerActive) {
-                // Sings notes of a gorgeous pentatonic vocal melody
-                melodyTimer += bufferSize
-                if (melodyTimer > sampleRate * 1.5) { // Switch note every 1.5 seconds
-                    melodyTimer = 0
-                    melodyNoteIdx = (melodyNoteIdx + 1) % demoMelodyNotes.size
-                    
-                    // Retrieve note from scale or tuned pitch key
-                    var tunedHz = getTunedPitch(demoMelodyNotes[melodyNoteIdx], effectsState.pitchCorrection)
-                    targetPitchHz = tunedHz
-                }
-
-                // Smooth glide (Portamento)
-                voicePitchHz += (targetPitchHz - voicePitchHz) * 0.08
-
-                // Vibrato (add gorgeous natural depth)
-                vibratoPhase += 2 * Math.PI * 6.2 / sampleRate // 6.2Hz vibrato
-                val currentVibrato = sin(vibratoPhase) * 6.5
-                val actualFreq = voicePitchHz + currentVibrato
-
-                for (i in 0 until bufferSize) {
-                    synthPhase += 2 * Math.PI * actualFreq / sampleRate
-                    if (synthPhase > 2 * Math.PI) synthPhase -= 2 * Math.PI
-
-                    // Synthesize classic vocal formants (combining fundamental + 2nd, 3rd, 4th harmonics for formant richness)
-                    val baseSine = sin(synthPhase)
-                    val formatH1 = sin(synthPhase * 2.0) * 0.45
-                    val formatH2 = sin(synthPhase * 3.0 + 0.5) * 0.35
-                    val formantA = sin(synthPhase * 4.0) * 0.15
-                    val formantVowel = (baseSine + formatH1 + formatH2 + formantA) * 16384.0f * 0.35f
-                    
-                    // If microphone has input, mix them, else play synthesized voice
-                    if (isInputActive) {
-                        // Mix both or replacement
-                        inBuf[i] = (inBuf[i] * 0.3f + formantVowel * 0.7f).toInt().coerceIn(-32768, 32767).toShort()
-                    } else {
-                        inBuf[i] = formantVowel.toInt().coerceIn(-32768, 32767).toShort()
-                    }
-                }
-            }
+            // 2. DIGITALLY MONITORED REAL MICROPHONE AUDIO WITH 12-RACK DSP PROCESSING ENGINE
 
             // Calculate DSP Cpu Time
             val dspStart = System.nanoTime()
@@ -495,7 +496,7 @@ class AudioProcessor {
             }
 
             // Write processed sound to buffer
-            if (isInputActive || isDemoSingerActive) {
+            if (isInputActive) {
                 audioTrack.write(outBuf, 0, bufferSize * 2)
             }
 
