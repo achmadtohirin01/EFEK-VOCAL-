@@ -282,18 +282,19 @@ fun MainStudioScreen(
                 
                 Spacer(modifier = Modifier.height(14.dp))
                 
-                // High Pass and Low Pass Dials
-                Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
-                    KnobControlColumn(
-                        label = "High Pass (LPF)",
+                // High Pass and Low Pass Horizontal Faders
+                Column(modifier = Modifier.fillMaxWidth().padding(top = 8.dp)) {
+                    HorizontalFaderColumn(
+                        label = "High Pass Filter (HPF)",
                         value = effects.eq.highPassHz,
                         valueRange = 20f..500f,
                         unitDisplay = "Hz",
                         onValueChange = { newVal -> viewModel.updateEffects { state -> state.eq.highPassHz = newVal } },
                         color = primaryColor
                     )
-                    KnobControlColumn(
-                        label = "Low Pass (HPF)",
+                    Spacer(modifier = Modifier.height(10.dp))
+                    HorizontalFaderColumn(
+                        label = "Low Pass Filter (LPF)",
                         value = effects.eq.lowPassHz,
                         valueRange = 5000f..20000f,
                         unitDisplay = "Hz",
@@ -1575,4 +1576,109 @@ fun getBandHzText(idx: Int): String {
     )
     val v = hz.getOrNull(idx) ?: 1000
     return if (v >= 1000) "${v / 1000}k" else "$v"
+}
+
+@Composable
+fun HorizontalFaderColumn(
+    label: String,
+    value: Float,
+    valueRange: ClosedFloatingPointRange<Float>,
+    unitDisplay: String,
+    onValueChange: (Float) -> Unit,
+    color: Color,
+    modifier: Modifier = Modifier
+) {
+    Column(
+        modifier = modifier
+            .fillMaxWidth()
+            .padding(vertical = 4.dp)
+    ) {
+        Row(
+            modifier = Modifier.fillMaxWidth(),
+            horizontalArrangement = Arrangement.SpaceBetween,
+            verticalAlignment = Alignment.CenterVertically
+        ) {
+            Text(label, color = LightMutedText, fontSize = 10.sp, fontWeight = FontWeight.SemiBold)
+            Text(
+                "${value.roundToInt()} $unitDisplay",
+                color = color,
+                fontSize = 11.sp,
+                fontWeight = FontWeight.Bold,
+                fontFamily = FontFamily.Monospace
+            )
+        }
+        Spacer(modifier = Modifier.height(4.dp))
+        BoxWithConstraints(
+            modifier = Modifier
+                .fillMaxWidth()
+                .height(36.dp)
+                .background(Color.DarkGray.copy(alpha = 0.2f), RoundedCornerShape(6.dp))
+                .border(1.dp, Color.Gray.copy(alpha = 0.15f), RoundedCornerShape(6.dp))
+                .pointerInput(valueRange) {
+                    detectTapGestures(
+                        onPress = { offset ->
+                            val width = size.width.toFloat()
+                            if (width > 0) {
+                                val fraction = (offset.x / width).coerceIn(0f, 1f)
+                                val newValue = valueRange.start + fraction * (valueRange.endInclusive - valueRange.start)
+                                onValueChange(newValue)
+                            }
+                        }
+                    )
+                }
+                .pointerInput(valueRange) {
+                    detectDragGestures { change, dragAmount ->
+                        change.consume()
+                        val width = size.width.toFloat()
+                        if (width > 0) {
+                            val currentFraction = (value - valueRange.start) / (valueRange.endInclusive - valueRange.start)
+                            val dragFractionDiff = dragAmount.x / width
+                            val newFraction = (currentFraction + dragFractionDiff).coerceIn(0f, 1f)
+                            val newValue = valueRange.start + newFraction * (valueRange.endInclusive - valueRange.start)
+                            onValueChange(newValue)
+                        }
+                    }
+                }
+                .testTag("fader_horizontal_${label.lowercase().replace(" ", "_")}")
+        ) {
+            val totalWidth = maxWidth
+            val fraction = ((value - valueRange.start) / (valueRange.endInclusive - valueRange.start)).coerceIn(0f, 1f)
+
+            Box(
+                modifier = Modifier.fillMaxSize(),
+                contentAlignment = Alignment.CenterStart
+            ) {
+                // Background track
+                Box(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .height(6.dp)
+                        .background(Color.Gray.copy(alpha = 0.25f), RoundedCornerShape(3.dp))
+                )
+                // Active track
+                Box(
+                    modifier = Modifier
+                        .fillMaxWidth(fraction)
+                        .height(6.dp)
+                        .background(color, RoundedCornerShape(3.dp))
+                )
+                // Thumb
+                Box(
+                    modifier = Modifier
+                        .offset(x = (totalWidth - 24.dp) * fraction)
+                        .size(24.dp)
+                        .background(Color.White, CircleShape)
+                        .border(2.dp, color, CircleShape),
+                    contentAlignment = Alignment.Center
+                ) {
+                    // Small inner dot for style
+                    Box(
+                        modifier = Modifier
+                            .size(6.dp)
+                            .background(color, CircleShape)
+                    )
+                }
+            }
+        }
+    }
 }
