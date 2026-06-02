@@ -329,15 +329,53 @@ class AudioProcessor {
                 val dspStart = System.nanoTime()
                 var rmsLeftSum = 0.0
                 var rmsRightSum = 0.0
-                val tempSpectrum = FloatArray(32) { 0.02f }
 
                 // Retrieve local snapshot of effectsState for localized thread-safety
                 val activeState = effectsState
 
-                for (i in 0 until currentBufferSize) {
-                    val rawVal = inBuf[i] / 32768.0f
-                    // Apply Input Pre-Amp
-                    var sample = rawVal * volInput
+                // Fast Direct Low-Latency Hardware Bypass detection when all effect units are turned off or bypassed
+                val anyEffectActive = (activeState.eq.isEnabled && !activeState.eq.isBypassed) ||
+                        (activeState.compressor.isEnabled && !activeState.compressor.isBypassed) ||
+                        (activeState.limiter.isEnabled && !activeState.limiter.isBypassed) ||
+                        (activeState.reverb.isEnabled && !activeState.reverb.isBypassed) ||
+                        (activeState.delay.isEnabled && !activeState.delay.isBypassed) ||
+                        (activeState.harmony.isEnabled && !activeState.harmony.isBypassed) ||
+                        (activeState.pitchCorrection.isEnabled && !activeState.pitchCorrection.isBypassed) ||
+                        (activeState.enhancer.isEnabled && !activeState.enhancer.isBypassed) ||
+                        (activeState.deEsser.isEnabled && !activeState.deEsser.isBypassed) ||
+                        (activeState.noiseReduction.isEnabled && !activeState.noiseReduction.isBypassed) ||
+                        (activeState.stereoImager.isEnabled && !activeState.stereoImager.isBypassed) ||
+                        (activeState.exciter.isEnabled && !activeState.exciter.isBypassed)
+
+                if (!anyEffectActive) {
+                    // Direct bypass mode for ultra-low latency - 0 ms delay
+                    for (i in 0 until currentBufferSize) {
+                        val rawFloatVal = inBuf[i] / 32768.0f
+                        var sample = rawFloatVal * volInput * volVocal
+                        if (sample.isNaN() || sample.isInfinite()) {
+                            sample = 0f
+                        }
+                        
+                        val finalL = (sample * volMaster).coerceIn(-1.0f, 1.0f)
+                        val finalR = (sample * volMaster).coerceIn(-1.0f, 1.0f)
+                        
+                        rmsLeftSum += finalL * finalL
+                        rmsRightSum += finalR * finalR
+                        
+                        if (isInputActive) {
+                            outBuf[i * 2] = (finalL * 32767.0f).toInt().toShort()
+                            outBuf[i * 2 + 1] = (finalR * 32767.0f).toInt().toShort()
+                        } else {
+                            outBuf[i * 2] = 0
+                            outBuf[i * 2 + 1] = 0
+                        }
+                    }
+                } else {
+                    // Active professional real-time float32 high-precision DSP processor tree
+                    for (i in 0 until currentBufferSize) {
+                        val rawVal = inBuf[i] / 32768.0f
+                        // Apply Input Pre-Amp
+                        var sample = rawVal * volInput
 
                     // Safe NaN/Infinity protection on main input
                     if (sample.isNaN() || sample.isInfinite()) {
@@ -658,10 +696,7 @@ class AudioProcessor {
                         outBuf[i * 2] = 0
                         outBuf[i * 2 + 1] = 0
                     }
-
-                    // Compute dynamic real-time FFT Spectrum
-                    val bandIdx = (i % 32)
-                    tempSpectrum[bandIdx] += abs(finalL) * (1.2f - (bandIdx / 32.0f) * 0.5f)
+                }
                 }
 
                 // Write processed buffer block to output playout
@@ -691,17 +726,52 @@ class AudioProcessor {
                     if (rmsR > peakR) peakR = rmsR else peakR = max(0.01f, peakR - 0.04f)
                     _vuPeak.value = Pair(peakL, peakR)
 
-                    // History smoothed spectrum bar emissions
-                    val finalSpec = FloatArray(32)
+                    // REAL MATHEMATICALLY LOG-SPACED DFT SPECTROMETER
+                    // Map frequencies from 70Hz (Sub-bass/vocal fundamental) to 11000Hz (Vocal air)
+                    val freqBands = FloatArray(32) { b ->
+                        val minF = 70.0
+                        val maxF = 11000.0
+                        (minF * (maxF / minF).pow(b / 31.0)).toFloat()
+                    }
+
                     for (b in 0..31) {
-                        val valEner = (tempSpectrum[b] / (currentBufferSize / 32f) * 4.0f).coerceIn(0.01f, 1.0f)
+                        val freq = freqBands[b]
+                        val omega = (2f * PI.toFloat() * freq / sampleRate)
+                        
+                        var rSum = 0f
+                        var iSum = 0f
+                        
+                        // Run windowed Real DFT on the current hardware buffer
+                        for (i in 0 until currentBufferSize) {
+                            val rawVal = inBuf[i] / 32768.0f
+                            // Hann window function to smooth spectral leakage
+                            val window = 0.5f * (1.1f - cos(2f * PI.toFloat() * i / currentBufferSize))
+                            val windowedSample = rawVal * window
+                            
+                            val angle = omega * i
+                            rSum += windowedSample * cos(angle)
+                            iSum += windowedSample * sin(angle)
+                        }
+                        
+                        // Scale the magnitude to a beautiful natural visual range
+                        val rawMag = sqrt(rSum * rSum + iSum * iSum)
+                        
+                        // Dynamic equalizer band boost tuning based on human hearing spectrum sensitivity
+                        val bandBoost = if (b < 4) 4.5f else if (b < 12) 5.5f else if (b < 24) 6.5f else 8.5f
+                        // Prevent vertical clipping while maintaining lush bouncing visual fidelity
+                        val valEner = (rawMag * bandBoost * 1.5f).coerceIn(0.005f, 1.0f)
+                        
                         spectrumHistory[historyIndex][b] = valEner
                     }
                     historyIndex = (historyIndex + 1) % 5
 
+                    // Temporal averaging smoothing over history samples
+                    val finalSpec = FloatArray(32)
                     for (b in 0..31) {
                         var avg = 0f
-                        for (h in 0..4) avg += spectrumHistory[h][b]
+                        for (h in 0..4) {
+                            avg += spectrumHistory[h][b]
+                        }
                         finalSpec[b] = avg / 5.0f
                     }
                     _spectrumData.value = finalSpec
