@@ -68,6 +68,9 @@ class VocalStudioViewModel(application: Application) : AndroidViewModel(applicat
     private val _volMaster = MutableStateFlow(0.8f)
     val volMaster: StateFlow<Float> = _volMaster.asStateFlow()
 
+    private val _bufferSize = MutableStateFlow(48)
+    val bufferSize: StateFlow<Int> = _bufferSize.asStateFlow()
+
     // Selected Preset
     private val _selectedPreset = MutableStateFlow<StudioPreset?>(null)
     val selectedPreset: StateFlow<StudioPreset?> = _selectedPreset.asStateFlow()
@@ -84,6 +87,11 @@ class VocalStudioViewModel(application: Application) : AndroidViewModel(applicat
         // Load saved theme if any
         val savedTheme = prefs.getString("selected_theme", WaveTheme.DARK_NEON.name)
         _currentTheme.value = WaveTheme.values().find { it.name == savedTheme } ?: WaveTheme.DARK_NEON
+
+        // Load saved buffer size
+        val savedBufferSize = prefs.getInt("buffer_size", 48)
+        _bufferSize.value = savedBufferSize
+        audioProcessor.bufferSize = savedBufferSize
 
         // Load custom presets index
         loadCustomPresetsList()
@@ -141,12 +149,19 @@ class VocalStudioViewModel(application: Application) : AndroidViewModel(applicat
         audioProcessor.volMaster = vol
     }
 
+    fun setBufferSize(v: Int) {
+        _bufferSize.value = v
+        audioProcessor.bufferSize = v
+        prefs.edit().putInt("buffer_size", v).apply()
+    }
+
     private fun syncProcessor() {
         audioProcessor.effectsState = _effectsState.value
         audioProcessor.volInput = _volInput.value
         audioProcessor.volVocal = _volVocal.value
         audioProcessor.volEffect = _volEffect.value
         audioProcessor.volMaster = _volMaster.value
+        audioProcessor.bufferSize = _bufferSize.value
     }
 
     fun updateEffects(update: (AllEffectsState) -> Unit) {

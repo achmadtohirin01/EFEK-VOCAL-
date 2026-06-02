@@ -28,6 +28,7 @@ import androidx.compose.ui.unit.sp
 import com.example.model.WaveTheme
 import com.example.ui.theme.*
 import com.example.viewmodel.VocalStudioViewModel
+import kotlin.math.roundToInt
 
 @Composable
 fun SettingsScreen(
@@ -95,39 +96,87 @@ fun SettingsScreen(
                 )
                 Spacer(modifier = Modifier.height(4.dp))
                 Text(
-                    text = "Ukuran buffer yang lebih kecil mengurangi latency tetapi membutuhkan performa CPU perangkat yang lebih stabil.",
+                    text = "Gunakan fader ini untuk mengatur ukuran buffer dari 0 sampai 124 secara real-time. Semakin rendah nilai fader, semakin dekat latency ke 0 ms (tanpa jeda).",
                     color = LightMutedText,
                     fontSize = 11.sp,
                     lineHeight = 15.sp
                 )
                 
                 Spacer(modifier = Modifier.height(14.dp))
+
+                val bufferSizeState by viewModel.bufferSize.collectAsState()
                 
                 Row(
                     modifier = Modifier.fillMaxWidth(),
-                    horizontalArrangement = Arrangement.spacedBy(8.dp)
+                    horizontalArrangement = Arrangement.SpaceBetween,
+                    verticalAlignment = Alignment.CenterVertically
                 ) {
-                    listOf(256, 512, 1024).forEach { size ->
-                        val isSel = viewModel.audioProcessor.bufferSize == size
+                    Text(
+                        text = "UKURAN CHUNK BUFFER:",
+                        color = LightMutedText,
+                        fontSize = 10.sp,
+                        fontWeight = FontWeight.SemiBold
+                    )
+                    Text(
+                        text = if (bufferSizeState == 0) "0 (Zero Latency Mode, ~0.2ms)" 
+                               else "$bufferSizeState Frames (${((bufferSizeState * 1000f / 44100f) * 10).roundToInt() / 10f} ms)",
+                        color = primaryColor,
+                        fontSize = 11.sp,
+                        fontWeight = FontWeight.Bold,
+                        fontFamily = FontFamily.Monospace
+                    )
+                }
+                
+                Spacer(modifier = Modifier.height(6.dp))
+                
+                Slider(
+                    value = bufferSizeState.toFloat(),
+                    onValueChange = { newVal ->
+                        viewModel.setBufferSize(newVal.roundToInt())
+                    },
+                    valueRange = 0f..124f,
+                    colors = SliderDefaults.colors(
+                        activeTrackColor = primaryColor,
+                        inactiveTrackColor = Color.Gray.copy(alpha = 0.2f),
+                        thumbColor = Color.White
+                    ),
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .testTag("buffer_size_fader_slider")
+                )
+
+                Spacer(modifier = Modifier.height(8.dp))
+
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.spacedBy(6.dp)
+                ) {
+                    listOf(0, 16, 32, 64, 124).forEach { size ->
+                        val isSel = bufferSizeState == size
                         val glowStroke = if (isSel) BorderStroke(1.dp, primaryColor) else BorderStroke(1.dp, Color.Transparent)
                         
                         Surface(
-                            onClick = { viewModel.audioProcessor.bufferSize = size },
+                            onClick = { viewModel.setBufferSize(size) },
                             modifier = Modifier.weight(1f),
                             shape = RoundedCornerShape(8.dp),
-                            color = if (isSel) primaryColor.copy(alpha = 0.2f) else MaterialTheme.colorScheme.surfaceVariant,
+                            color = if (isSel) primaryColor.copy(alpha = 0.2f) else MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.5f),
                             border = glowStroke
                         ) {
                             Column(
-                                modifier = Modifier.padding(vertical = 10.dp),
+                                modifier = Modifier.padding(vertical = 8.dp),
                                 horizontalAlignment = Alignment.CenterHorizontally
                             ) {
-                                Text("$size Frames", color = if (isSel) primaryColor else Color.White, fontSize = 12.sp, fontWeight = FontWeight.Bold)
                                 Text(
-                                    text = if (size == 256) "Ultra Low Latency" else if (size == 512) "Balanced" else "High Stability",
+                                    text = if (size == 0) "0 (Zero)" else "$size", 
+                                    color = if (isSel) primaryColor else Color.White, 
+                                    fontSize = 11.sp, 
+                                    fontWeight = FontWeight.Bold
+                                )
+                                Text(
+                                    text = if (size == 0) "Direct" else "${((size * 1000f / 44100f) * 10).roundToInt() / 10f}ms",
                                     color = LightMutedText,
-                                    fontSize = 8.sp,
-                                    modifier = Modifier.padding(top = 2.dp)
+                                    fontSize = 7.sp,
+                                    modifier = Modifier.padding(top = 1.dp)
                                 )
                             }
                         }

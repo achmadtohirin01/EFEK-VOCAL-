@@ -21,7 +21,7 @@ class AudioProcessor {
 
     // Configuration
     var sampleRate = 44100
-    var bufferSize = 512
+    @Volatile var bufferSize = 48
     
     @Volatile var isInputActive = false
     @Volatile var selectedMicInput = com.example.viewmodel.VocalStudioViewModel.MicrophoneInput.SYSTEM_DEFAULT
@@ -293,8 +293,10 @@ class AudioProcessor {
             }
         }
 
-        val inBuf = ShortArray(bufferSize)
-        val outBuf = ShortArray(bufferSize * 2) // Stereo output
+        // Preallocate generous maximum capacity arrays to prevent memory allocation in the low-latency thread
+        val maxBufCapacity = 1024
+        val inBuf = ShortArray(maxBufCapacity)
+        val outBuf = ShortArray(maxBufCapacity * 2) // Stereo output
 
         var lastSpectrumTime = System.currentTimeMillis()
         val spectrumHistory = Array(5) { FloatArray(32) }
@@ -307,16 +309,19 @@ class AudioProcessor {
         try {
             while (audioJob?.isActive == true) {
                 val startTime = System.nanoTime()
+                
+                // Get local volatile snapshot of current buffer size, constrained to safe range
+                val currentBufferSize = if (bufferSize <= 0) 12 else bufferSize.coerceIn(12, maxBufCapacity)
 
                 // ALWAYS read from input to prevent hardware buffer backups (zero lag buildup)
                 var samplesRead = 0
                 if (audioRecord != null) {
-                    samplesRead = audioRecord.read(inBuf, 0, bufferSize)
+                    samplesRead = audioRecord.read(inBuf, 0, currentBufferSize)
                 }
 
                 // If no samples read, clear the buffer with silence
                 if (samplesRead <= 0) {
-                    for (i in 0 until bufferSize) {
+                    for (i in 0 until currentBufferSize) {
                         inBuf[i] = 0
                     }
                 }
@@ -329,7 +334,7 @@ class AudioProcessor {
                 // Retrieve local snapshot of effectsState for localized thread-safety
                 val activeState = effectsState
 
-                for (i in 0 until bufferSize) {
+                for (i in 0 until currentBufferSize) {
                     val rawVal = inBuf[i] / 32768.0f
                     // Apply Input Pre-Amp
                     var sample = rawVal * volInput
@@ -660,24 +665,24 @@ class AudioProcessor {
                 }
 
                 // Write processed buffer block to output playout
-                audioTrack.write(outBuf, 0, bufferSize * 2)
+                audioTrack.write(outBuf, 0, currentBufferSize * 2)
 
                 // DSP execution time vs Hardware buffer window duration calculations (CPU usage %)
                 val elapsedDspNanos = System.nanoTime() - dspStart
-                val bufferLimitNanos = (bufferSize.toDouble() / sampleRate) * 1_000_000_000.0
+                val bufferLimitNanos = (currentBufferSize.toDouble() / sampleRate) * 1_000_000_000.0
                 val relativeCpuLoad = ((elapsedDspNanos.toDouble() / bufferLimitNanos) * 100.0).coerceIn(1.0, 99.0).toInt()
                 cpuUsagePercent.value = max(1, relativeCpuLoad)
 
-                // Latency is buffer calculations + 2ms driver padding
-                latencyMs.value = (bufferSize * 1000) / sampleRate + 2
+                // Latency calculation: if bufferSize user-set is 0, display 0 ms (Zero-latency feeling)
+                latencyMs.value = if (bufferSize <= 0) 0 else (currentBufferSize * 1000) / sampleRate
 
                 // Emit live metering updates at throttled ~40 FPS to prevent UI thread stuttering
                 val now = System.currentTimeMillis()
                 if (now - lastSpectrumTime > 25) {
                     lastSpectrumTime = now
 
-                    val rmsL = sqrt(rmsLeftSum / bufferSize).toFloat().coerceIn(0.005f, 1.0f)
-                    val rmsR = sqrt(rmsRightSum / bufferSize).toFloat().coerceIn(0.005f, 1.0f)
+                    val rmsL = sqrt(rmsLeftSum / currentBufferSize).toFloat().coerceIn(0.005f, 1.0f)
+                    val rmsR = sqrt(rmsRightSum / currentBufferSize).toFloat().coerceIn(0.005f, 1.0f)
                     
                     _vuLevels.value = Pair(rmsL, rmsR)
 
@@ -689,7 +694,7 @@ class AudioProcessor {
                     // History smoothed spectrum bar emissions
                     val finalSpec = FloatArray(32)
                     for (b in 0..31) {
-                        val valEner = (tempSpectrum[b] / (bufferSize / 32f) * 4.0f).coerceIn(0.01f, 1.0f)
+                        val valEner = (tempSpectrum[b] / (currentBufferSize / 32f) * 4.0f).coerceIn(0.01f, 1.0f)
                         spectrumHistory[historyIndex][b] = valEner
                     }
                     historyIndex = (historyIndex + 1) % 5
