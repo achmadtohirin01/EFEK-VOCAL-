@@ -23,6 +23,9 @@ import androidx.compose.ui.geometry.Size
 import androidx.compose.ui.graphics.*
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.platform.testTag
+import androidx.compose.foundation.gestures.detectDragGestures
+import androidx.compose.foundation.gestures.detectTapGestures
+import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
@@ -255,20 +258,17 @@ fun MainStudioScreen(
                                 color = if (value == 0f) LightMutedText else primaryColor,
                                 fontWeight = FontWeight.Bold
                             )
-                            Slider(
+                            CustomVerticalSlider(
                                 value = value,
-                                onValueChange = { newVal ->
+                                onValueChange = { newVal: Float ->
                                     viewModel.updateEffects { state -> state.eq.bands[bandIdx] = newVal }
                                 },
                                 valueRange = -12f..12f,
                                 modifier = Modifier
                                     .weight(1f)
-                                    .graphicsLayer { rotationZ = -90f },
-                                colors = SliderDefaults.colors(
-                                    thumbColor = primaryColor,
-                                    activeTrackColor = primaryColor,
-                                    inactiveTrackColor = primaryColor.copy(alpha = 0.2f)
-                                )
+                                    .fillMaxWidth()
+                                    .testTag("eq_band_$bandIdx"),
+                                color = primaryColor
                             )
                             Text(
                                 text = getBandHzText(bandIdx),
@@ -1305,13 +1305,14 @@ fun RackSlotItem(
                         modifier = Modifier
                             .size(24.dp)
                             .clip(CircleShape)
-                            .background(if (isEnabled) primaryColor.copy(alpha = 0.18f) else Color.DarkGray.copy(alpha = 0.2f))
+                            .background(if (isEnabled) Color(0xFF39FF14).copy(alpha = 0.18f) else Color(0xFFFF3B30).copy(alpha = 0.18f))
+                            .border(1.dp, if (isEnabled) Color(0xFF39FF14) else Color(0xFFFF3B30), CircleShape)
                     ) {
                         Icon(
-                            Icons.Default.PlayArrow,
+                            imageVector = if (isEnabled) Icons.Default.Check else Icons.Default.Close,
                             contentDescription = "Power",
-                            tint = if (isEnabled) primaryColor else Color.Gray,
-                            modifier = Modifier.size(14.dp)
+                            tint = if (isEnabled) Color(0xFF39FF14) else Color(0xFFFF3B30),
+                            modifier = Modifier.size(11.dp)
                         )
                     }
 
@@ -1344,14 +1345,14 @@ fun RackSlotItem(
                     Surface(
                         onClick = onToggleBypass,
                         shape = RoundedCornerShape(4.dp),
-                        color = if (isBypassed) PeakClipRed.copy(alpha = 0.2f) else if (isEnabled) primaryColor.copy(alpha = 0.08f) else Color.Transparent,
+                        color = if (isBypassed) PeakClipRed.copy(alpha = 0.2f) else if (isEnabled) Color(0xFF39FF14).copy(alpha = 0.08f) else Color.Transparent,
                         border = BorderStroke(1.dp, if (isBypassed) PeakClipRed else Color.Gray.copy(alpha = 0.3f))
                     ) {
                         Text(
                             text = if (isBypassed) "BYPASS" else "WET",
                             fontSize = 8.sp,
                             fontWeight = FontWeight.Bold,
-                            color = if (isBypassed) PeakClipRed else if (isEnabled) primaryColor else Color.LightGray,
+                            color = if (isBypassed) PeakClipRed else if (isEnabled) Color(0xFF39FF14) else Color.LightGray,
                             modifier = Modifier.padding(horizontal = 6.dp, vertical = 4.dp)
                         )
                     }
@@ -1455,6 +1456,16 @@ fun KnobControlColumn(
                 .size(46.dp)
                 .background(Color.DarkGray.copy(alpha = 0.3f), CircleShape)
                 .border(1.5.dp, color.copy(alpha = 0.4f), CircleShape)
+                .pointerInput(valueRange) {
+                    detectDragGestures { change, dragAmount ->
+                        change.consume()
+                        val dragScale = 0.005f
+                        val currentFraction = (value - valueRange.start) / (valueRange.endInclusive - valueRange.start)
+                        val newFraction = (currentFraction - dragAmount.y * dragScale).coerceIn(0f, 1f)
+                        val newValue = valueRange.start + newFraction * (valueRange.endInclusive - valueRange.start)
+                        onValueChange(newValue)
+                    }
+                }
                 .testTag("knob_${label.lowercase().replace(" ","_")}"),
             contentAlignment = Alignment.Center
         ) {
@@ -1481,6 +1492,79 @@ fun KnobControlColumn(
         }
         Spacer(modifier = Modifier.height(2.dp))
         Text("$unitDisplay", color = color, fontSize = 9.sp, fontWeight = FontWeight.Bold)
+    }
+}
+
+@Composable
+private fun CustomVerticalSlider(
+    value: Float,
+    onValueChange: (Float) -> Unit,
+    valueRange: ClosedFloatingPointRange<Float>,
+    modifier: Modifier = Modifier,
+    color: Color = MaterialTheme.colorScheme.primary
+) {
+    BoxWithConstraints(
+        modifier = modifier
+            .width(36.dp)
+            .fillMaxHeight()
+            .pointerInput(valueRange) {
+                detectTapGestures(
+                    onPress = { offset ->
+                        val peakY = size.height.toFloat()
+                        if (peakY > 0) {
+                            val rawFraction = 1f - (offset.y / peakY)
+                            val fraction = rawFraction.coerceIn(0f, 1f)
+                            val newValue = valueRange.start + fraction * (valueRange.endInclusive - valueRange.start)
+                            onValueChange(newValue)
+                        }
+                    }
+                )
+            }
+            .pointerInput(valueRange) {
+                detectDragGestures { change, dragAmount ->
+                    change.consume()
+                    val peakY = size.height.toFloat()
+                    if (peakY > 0) {
+                        val currentFraction = (value - valueRange.start) / (valueRange.endInclusive - valueRange.start)
+                        val dragFractionDiff = -dragAmount.y / peakY
+                        val newFraction = (currentFraction + dragFractionDiff).coerceIn(0f, 1f)
+                        val newValue = valueRange.start + newFraction * (valueRange.endInclusive - valueRange.start)
+                        onValueChange(newValue)
+                    }
+                }
+            }
+    ) {
+        val totalHeight = maxHeight
+        val fraction = ((value - valueRange.start) / (valueRange.endInclusive - valueRange.start)).coerceIn(0f, 1f)
+        
+        Box(
+            modifier = Modifier.fillMaxSize(),
+            contentAlignment = Alignment.Center
+        ) {
+            // Track
+            Box(
+                modifier = Modifier
+                    .width(4.dp)
+                    .fillMaxHeight()
+                    .background(Color.Gray.copy(alpha = 0.25f), RoundedCornerShape(2.dp))
+            )
+            // Active Track
+            Box(
+                modifier = Modifier
+                    .width(4.dp)
+                    .align(Alignment.BottomCenter)
+                    .fillMaxHeight(fraction)
+                    .background(color, RoundedCornerShape(2.dp))
+            )
+            // Thumb
+            Box(
+                modifier = Modifier
+                    .offset(y = totalHeight * (1f - fraction) - totalHeight / 2f)
+                    .size(20.dp)
+                    .background(Color.White, CircleShape)
+                    .border(1.5.dp, color, CircleShape)
+            )
+        }
     }
 }
 

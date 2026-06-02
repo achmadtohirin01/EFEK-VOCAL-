@@ -21,6 +21,11 @@ import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.platform.testTag
+import androidx.compose.foundation.gestures.detectDragGestures
+import androidx.compose.foundation.gestures.detectTapGestures
+import androidx.compose.ui.input.pointer.pointerInput
+import androidx.compose.foundation.shape.CircleShape
+import androidx.compose.foundation.layout.BoxWithConstraints
 import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
@@ -203,40 +208,16 @@ fun RowScope.VocalFaderColumn(
             Spacer(modifier = Modifier.width(6.dp))
 
             // Vertical Slider
-            Box(
+            CustomVerticalSlider(
+                value = value,
+                onValueChange = onValueChange,
+                valueRange = 0f..1.5f,
                 modifier = Modifier
                     .fillMaxHeight()
-                    .width(42.dp),
-                contentAlignment = Alignment.Center
-            ) {
-                // Background Track
-                Canvas(modifier = Modifier
-                    .fillMaxHeight()
-                    .width(4.dp)) {
-                    drawLine(
-                        color = Color.DarkGray,
-                        start = Offset(size.width / 2f, 0f),
-                        end = Offset(size.width / 2f, size.height),
-                        strokeWidth = 6f
-                    )
-                }
-
-                // Standard slider rotated
-                Slider(
-                    value = value,
-                    onValueChange = onValueChange,
-                    valueRange = 0f..1.5f,
-                    modifier = Modifier
-                        .fillMaxHeight()
-                        .graphicsLayer { rotationZ = -90f }
-                        .testTag("fader_${label.lowercase().replace(" ", "_")}"),
-                    colors = SliderDefaults.colors(
-                        thumbColor = Color.White,
-                        activeTrackColor = Color.Transparent,
-                        inactiveTrackColor = Color.Transparent
-                    )
-                )
-            }
+                    .width(42.dp)
+                    .testTag("fader_${label.lowercase().replace(" ", "_")}"),
+                color = primaryColor
+            )
 
             Spacer(modifier = Modifier.width(6.dp))
 
@@ -268,5 +249,77 @@ fun RowScope.VocalFaderColumn(
         }
 
         Spacer(modifier = Modifier.height(10.dp))
+    }
+}
+
+@Composable
+private fun CustomVerticalSlider(
+    value: Float,
+    onValueChange: (Float) -> Unit,
+    valueRange: ClosedFloatingPointRange<Float>,
+    modifier: Modifier = Modifier,
+    color: Color = MaterialTheme.colorScheme.primary
+) {
+    BoxWithConstraints(
+        modifier = modifier
+            .fillMaxHeight()
+            .pointerInput(valueRange) {
+                detectTapGestures(
+                    onPress = { offset ->
+                        val peakY = size.height.toFloat()
+                        if (peakY > 0) {
+                            val rawFraction = 1f - (offset.y / peakY)
+                            val fraction = rawFraction.coerceIn(0f, 1f)
+                            val newValue = valueRange.start + fraction * (valueRange.endInclusive - valueRange.start)
+                            onValueChange(newValue)
+                        }
+                    }
+                )
+            }
+            .pointerInput(valueRange) {
+                detectDragGestures { change, dragAmount ->
+                    change.consume()
+                    val peakY = size.height.toFloat()
+                    if (peakY > 0) {
+                        val currentFraction = (value - valueRange.start) / (valueRange.endInclusive - valueRange.start)
+                        val dragFractionDiff = -dragAmount.y / peakY
+                        val newFraction = (currentFraction + dragFractionDiff).coerceIn(0f, 1f)
+                        val newValue = valueRange.start + newFraction * (valueRange.endInclusive - valueRange.start)
+                        onValueChange(newValue)
+                    }
+                }
+            }
+    ) {
+        val totalHeight = maxHeight
+        val fraction = ((value - valueRange.start) / (valueRange.endInclusive - valueRange.start)).coerceIn(0f, 1f)
+        
+        Box(
+            modifier = Modifier.fillMaxSize(),
+            contentAlignment = Alignment.Center
+        ) {
+            // Track
+            Box(
+                modifier = Modifier
+                    .width(4.dp)
+                    .fillMaxHeight()
+                    .background(Color.Gray.copy(alpha = 0.25f), RoundedCornerShape(2.dp))
+            )
+            // Active Track
+            Box(
+                modifier = Modifier
+                    .width(4.dp)
+                    .align(Alignment.BottomCenter)
+                    .fillMaxHeight(fraction)
+                    .background(color, RoundedCornerShape(2.dp))
+            )
+            // Thumb
+            Box(
+                modifier = Modifier
+                    .offset(y = totalHeight * (1f - fraction) - totalHeight / 2f)
+                    .size(24.dp)
+                    .background(Color.White, CircleShape)
+                    .border(2.dp, color, CircleShape)
+            )
+        }
     }
 }

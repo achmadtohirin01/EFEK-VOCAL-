@@ -151,10 +151,23 @@ class VocalStudioViewModel(application: Application) : AndroidViewModel(applicat
 
     fun updateEffects(update: (AllEffectsState) -> Unit) {
         val currentState = _effectsState.value
-        update(currentState)
-        // Trigger flow update
-        _effectsState.value = currentState.copy()
-        audioProcessor.effectsState = _effectsState.value
+        val newState = AllEffectsState(
+            eq = currentState.eq.copy(bands = currentState.eq.bands.clone()),
+            compressor = currentState.compressor.copy(),
+            limiter = currentState.limiter.copy(),
+            reverb = currentState.reverb.copy(),
+            delay = currentState.delay.copy(),
+            harmony = currentState.harmony.copy(),
+            pitchCorrection = currentState.pitchCorrection.copy(),
+            enhancer = currentState.enhancer.copy(),
+            deEsser = currentState.deEsser.copy(),
+            noiseReduction = currentState.noiseReduction.copy(),
+            stereoImager = currentState.stereoImager.copy(),
+            exciter = currentState.exciter.copy()
+        )
+        update(newState)
+        _effectsState.value = newState
+        audioProcessor.effectsState = newState
     }
 
     // Load any of the 18 pre-configured professional layouts

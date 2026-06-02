@@ -21,7 +21,7 @@ class AudioProcessor {
 
     // Configuration
     var sampleRate = 44100
-    var bufferSize = 1024
+    var bufferSize = 512
     var isInputActive = false
     var selectedMicInput = com.example.viewmodel.VocalStudioViewModel.MicrophoneInput.SYSTEM_DEFAULT
     private var activeAudioRecord: android.media.AudioRecord? = null
