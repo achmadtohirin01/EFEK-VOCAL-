@@ -1,0 +1,6 @@
+{
+  "name": "BRO EFEK VOCAL",
+  "description": "Profesional real-time vocal tuner, processor, and portable recording studio with high fidelity custom DSP, 12 effect racks, and live stereo VU/Spectrum analyzer.",
+  "requestFramePermissions": [],
+  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
+}
